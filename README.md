@@ -1,5 +1,7 @@
 # Respond
 
+[![Go Report Card](https://goreportcard.com/badge/github.com/robsignorelli/respond)](https://goreportcard.com/report/github.com/robsignorelli/respond)
+
 This package reduces the verbosity associated with responding to HTTP
 requests when using standard `net/http` handlers (with a bent towards JSON
 based REST APIs). Most HTTP handling
