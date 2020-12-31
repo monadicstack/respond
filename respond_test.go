@@ -484,6 +484,28 @@ func (suite RespondSuite) TestServe_binary() {
 	suite.Equal([]byte{0x42, 0x43, 0x44}, w.Body)
 }
 
+func (suite RespondSuite) TestServe_error() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	respond.To(w, req).Serve("foo.txt", &bytes.Buffer{}, errorWithStatus{
+		status:  504,
+		message: "rats",
+	})
+
+	suite.assertError(w, 504, "rats")
+}
+
+func (suite RespondSuite) TestServe_readerFail() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	reader := badReader{failureStatus: 403}
+	respond.To(w, req).Serve("foo.txt", reader)
+
+	suite.assertError(w, 403, "bad monkey")
+}
+
 func (suite RespondSuite) TestServeBytes_nil() {
 	w := newResponseWriter()
 	req := newRequest()
@@ -525,6 +547,18 @@ func (suite RespondSuite) TestServeBytes_binary() {
 	suite.assertHeader(w, "Content-Type", "image/jpeg")
 	suite.assertHeader(w, "Content-Disposition", "inline")
 	suite.Equal([]byte{0x42, 0x43, 0x44}, w.Body)
+}
+
+func (suite RespondSuite) TestServeBytes_error() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	respond.To(w, req).ServeBytes("foo.txt", []byte{}, errorWithStatus{
+		status:  504,
+		message: "rats",
+	})
+
+	suite.assertError(w, 504, "rats")
 }
 
 func (suite RespondSuite) TestDownload_nil() {
@@ -581,6 +615,28 @@ func (suite RespondSuite) TestDownload_binary() {
 	suite.Equal([]byte{0x42, 0x43, 0x44}, w.Body)
 }
 
+func (suite RespondSuite) TestDownload_error() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	respond.To(w, req).Download("foo.txt", &bytes.Buffer{}, errorWithStatus{
+		status:  504,
+		message: "rats",
+	})
+
+	suite.assertError(w, 504, "rats")
+}
+
+func (suite RespondSuite) TestDownload_readerFail() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	reader := badReader{failureStatus: 403}
+	respond.To(w, req).Download("foo.txt", reader)
+
+	suite.assertError(w, 403, "bad monkey")
+}
+
 func (suite RespondSuite) TestDownloadBytes_nil() {
 	w := newResponseWriter()
 	req := newRequest()
@@ -622,6 +678,18 @@ func (suite RespondSuite) TestDownloadBytes_binary() {
 	suite.assertHeader(w, "Content-Type", "image/jpeg")
 	suite.assertHeader(w, "Content-Disposition", `attachment; filename="foo.jpg"`)
 	suite.Equal([]byte{0x42, 0x43, 0x44}, w.Body)
+}
+
+func (suite RespondSuite) TestDownloadBytes_error() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	respond.To(w, req).DownloadBytes("foo.txt", []byte{}, errorWithStatus{
+		status:  504,
+		message: "rats",
+	})
+
+	suite.assertError(w, 504, "rats")
 }
 
 /*
@@ -761,4 +829,15 @@ func (err errorWithStatus) Error() string {
 
 func (err errorWithStatus) Status() int {
 	return err.status
+}
+
+type badReader struct {
+	failureStatus int
+}
+
+func (b badReader) Read(_ []byte) (n int, err error) {
+	return 0, errorWithStatus{
+		status:  b.failureStatus,
+		message: "bad monkey",
+	}
 }

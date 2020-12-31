@@ -67,7 +67,12 @@ func (r Responder) NoContent(errs ...error) {
 //
 // It will read your 'data' stream to completion but it will still be up to you to Close() it
 // afterwards if need be.
-func (r Responder) Serve(fileName string, data io.Reader) {
+func (r Responder) Serve(fileName string, data io.Reader, errs ...error) {
+	if err := firstError(errs...); err != nil {
+		r.Fail(err)
+		return
+	}
+
 	r.writer.Header().Set("Content-Type", fileNameToContentType(fileName))
 	r.writer.Header().Set("Content-Disposition", "inline")
 	r.writer.WriteHeader(http.StatusOK)
@@ -78,7 +83,7 @@ func (r Responder) Serve(fileName string, data io.Reader) {
 
 	_, err := io.Copy(r.writer, data)
 	if err != nil {
-		http.Error(r.writer, err.Error(), http.StatusInternalServerError)
+		r.Fail(err)
 	}
 }
 
@@ -86,8 +91,8 @@ func (r Responder) Serve(fileName string, data io.Reader) {
 // things like inline images or videos or any other content that you want your callers/clients
 // to embed directly in the client. The file name in this case case is simply used to determine
 // the proper Content-Type to include in the response.
-func (r Responder) ServeBytes(fileName string, data []byte) {
-	r.Serve(fileName, bytes.NewBuffer(data))
+func (r Responder) ServeBytes(fileName string, data []byte, errs ...error) {
+	r.Serve(fileName, bytes.NewBuffer(data), errs...)
 }
 
 // Download delivers the file data to the client/caller in a way that indicates that it should
@@ -97,7 +102,12 @@ func (r Responder) ServeBytes(fileName string, data []byte) {
 //
 // It will read your 'data' stream to completion but it will still be up to you to Close() it
 // afterwards if need be.
-func (r Responder) Download(fileName string, data io.Reader) {
+func (r Responder) Download(fileName string, data io.Reader, errs ...error) {
+	if err := firstError(errs...); err != nil {
+		r.Fail(err)
+		return
+	}
+
 	r.writer.Header().Set("Content-Type", fileNameToContentType(fileName))
 	r.writer.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, fileName))
 	r.writer.WriteHeader(http.StatusOK)
@@ -108,7 +118,7 @@ func (r Responder) Download(fileName string, data io.Reader) {
 
 	_, err := io.Copy(r.writer, data)
 	if err != nil {
-		http.Error(r.writer, err.Error(), http.StatusInternalServerError)
+		r.Fail(err)
 	}
 }
 
@@ -116,8 +126,8 @@ func (r Responder) Download(fileName string, data io.Reader) {
 // be given a download prompt (if using a browser or some other UI-based client). The file name
 // determines the Content-Type header we'll use in the response as well as be the default download
 // name that the caller will be presented with in their client/browser.
-func (r Responder) DownloadBytes(fileName string, data []byte) {
-	r.Download(fileName, bytes.NewBuffer(data))
+func (r Responder) DownloadBytes(fileName string, data []byte, errs ...error) {
+	r.Download(fileName, bytes.NewBuffer(data), errs...)
 }
 
 // Redirect performs a 307-style TEMPORARY redirect to the given resource. You can use printf-style

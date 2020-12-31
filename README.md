@@ -1,7 +1,8 @@
 # Respond
 
 This package reduces the verbosity associated with responding to HTTP
-requests when using standard `net/http` handlers. Most HTTP handling
+requests when using standard `net/http` handlers (with a bent towards JSON
+based REST APIs). Most HTTP handling
 examples using the standard library tend to be 25% handling logic and
 75% dealing with data marshaling, header management, status code updates,
 etc. Respond tries to flip that ratio so more of your code is business
@@ -57,7 +58,27 @@ func MyHandler(w http.ResponseWriter, req *http.Request) {
 }
 ```
 
-You can support
+### Success Responses
+
+Responders have named helpers for some of the more common success
+codes you might want to respond with:
+
+```go
+response := respond.To(w, req)
+...
+// Responds w/ a 200 and 'someValue' as JSON 
+response.Ok(someValue)
+// Responds w/ a 201 and 'someValue' as JSON 
+response.Created(someValue)
+// Responds w/ a 202 and 'someValue' as JSON 
+response.Accept(someValue)
+// Responds w/ a 204 and no body. 
+response.NoContent()
+// Responds w/ a 307-style redirect to the given URL
+response.Redirect("https://google.com?q=", searchText)
+// Responds w/ a 308-style redirect to the given URL
+response.RedirectPermanent("https://google.com?q=", searchText)
+```
 
 ### Error Handling
 
@@ -66,26 +87,38 @@ with meaningful error statuses and messages. All error messages
 support `printf` style formatting.
 
 ```go
-responder.Unauthorized("what, no credentials?")
+response := respond.To(w, req)
+...
 // Status => 401
 // Body   => { "status": 401, "message": "what, no credentials?" }
+response.Unauthorized("what, no credentials?")
 
-responder.Forbidden("missing '%s' role", someRole)
 // Status => 403
 // Body   => { "status": 403, "message": "missing 'badass' role" }
+response.Forbidden("missing '%s' role", someRole)
 
-responder.NotFound("unable to find user [%s]", userID)
 // Status => 404
 // Body   => { "status": 404, "message": "unable to find user [123]" }
+response.NotFound("unable to find user [%s]", userID)
 
-responder.InternalServerError("what did you do!?!")
 // Status => 500
 // Body   => { "status": 500, "message": "what did you do!?!" }
+response.InternalServerError("what did you do!?!")
+
+// Status => 503
+// Body   => { "status": 503, "message": "not working right now" }
+response.ServiceUnavailable("not working right now")
+
 ```
 These are just a few common ones. Check the docs or use auto-complete
-in your IDE to see what other errors are supported.
+in your IDE to see which errors are supported.
 
-Here's a common pattern for utilizing these response functions:
+Here's a common pattern for utilizing these response functions if
+you use named errors. It gives you strongly coded errors while
+left-aligning your code to help keep your handler code more
+idiomatic. If you have more control over the errors you generate,
+take a look at the next section to see how you can reduce this
+boilerplate even further.
 
 ```go
 func MyHandler(w http.ResponseWriter, req *http.Request) {
@@ -95,9 +128,9 @@ func MyHandler(w http.ResponseWriter, req *http.Request) {
     user, err := userRepo.FindById(userID)
 
     switch err {
-    case users.ErrNoSuchAccount:
+    case ErrNoSuchAccount:
         response.NotFound("no such users: %s", userID)
-    case users.ErrDatabaseConn:
+    case ErrDatabaseConn:
         response.ServiceUnavailable("user database unavailable")
     default:
         response.Ok(user, err)
@@ -110,7 +143,7 @@ func MyHandler(w http.ResponseWriter, req *http.Request) {
 While it has its places, writing those `switch` statements to respond
 with the correct status code can be a pain. All of the success
 response functions like `Ok()`, `Accepted()`, etc accept an optional
-`Error` argument (yes... by bastardizing variadic functions).
+`Error` argument (yes... by bastardizing variadic functions... sorry).
 
 ```go
 func MyHandler(w http.ResponseWriter, req *http.Request) {
@@ -120,8 +153,8 @@ func MyHandler(w http.ResponseWriter, req *http.Request) {
     user, err := userRepo.FindById(userID)
 
     // When 'err' is nil, the result will be a 200 w/ the user
-    // data. When 'err' is non-nil, we'll ignore the user data
-    // and return a 4XX/5XX error with the error's message.
+    // data as JSON. When 'err' is non-nil, we'll ignore the
+    // user data and return a 4XX/5XX error w/ err's message.
     response.Ok(user, err)
 }
 ```
@@ -150,18 +183,18 @@ Here is a sample error you might write that satisfies the
 `ErrorWithCode` interface.
 
 ```go
-type NotFound struct {
+type NotFoundError struct {
     message string
 }
-func (err NotFound) Error() string {
+func (err NotFoundError) Error() string {
     return err.message
 }
-func (err NotFound) Code() int {
+func (err NotFoundError) Code() int {
     return 404
 }
 ```
 
-Your business logic can just naturally returns meaningful errors.
+Your business logic can just naturally return meaningful errors.
 
 ```go
 func (repo *UserRepo) FindById(userID string) (*User, error) {
@@ -171,7 +204,7 @@ func (repo *UserRepo) FindById(userID string) (*User, error) {
 
     switch err {
     case sql.ErrNoRows:
-        return nil, NotFound{message: "no such user"} 
+        return nil, NotFoundError{message: "no such user"} 
     default:
         return user, err
 }
