@@ -237,7 +237,7 @@ func (r Responder) Conflict(msg string, args ...interface{}) {
 	r.Fail(errorResponse{Status: http.StatusConflict, Message: msg})
 }
 
-// Conflict responds w/ a 410 status and a body that contains the status/message.
+// Gone responds w/ a 410 status and a body that contains the status/message.
 func (r Responder) Gone(msg string, args ...interface{}) {
 	msg = fmt.Sprintf(msg, args...)
 	r.Fail(errorResponse{Status: http.StatusGone, Message: msg})
