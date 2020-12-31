@@ -66,16 +66,22 @@ codes you might want to respond with:
 ```go
 response := respond.To(w, req)
 ...
+
 // Responds w/ a 200 and 'someValue' as JSON 
 response.Ok(someValue)
+
 // Responds w/ a 201 and 'someValue' as JSON 
 response.Created(someValue)
+
 // Responds w/ a 202 and 'someValue' as JSON 
 response.Accept(someValue)
+
 // Responds w/ a 204 and no body. 
 response.NoContent()
+
 // Responds w/ a 307-style redirect to the given URL
 response.Redirect("https://google.com?q=", searchText)
+
 // Responds w/ a 308-style redirect to the given URL
 response.RedirectPermanent("https://google.com?q=", searchText)
 ```
@@ -240,12 +246,12 @@ func ProfilePictureHandler(w http.ResponseWriter, req *http.Request) {
     defer imageReader.Close()
 
     // Deliver the picture "inline" for use in an <img> tag.
-    respond.Serve("profile.jpg", image, err)
+    response.Serve("profile.jpg", image, err)
 
     // OR
 
     // Offer a download dialog for the image
-    respond.Download("profile.jpg", image, err)
+    response.Download("profile.jpg", image, err)
 }
 ```
 
