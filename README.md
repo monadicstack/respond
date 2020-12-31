@@ -79,6 +79,9 @@ response.Accept(someValue)
 // Responds w/ a 204 and no body. 
 response.NoContent()
 
+// Responds w/ a 304 and no body. 
+response.NotModified()
+
 // Responds w/ a 307-style redirect to the given URL
 response.Redirect("https://google.com?q=", searchText)
 
@@ -259,6 +262,47 @@ In addition to writing the bytes, `respond` will apply the correct
 `Content-Type` and `Content-Disposition` headers based on the name/extension
 of the file you provide.
 
+### Responding With HTML
+
+While most of `respond` was built to support building REST APIs,
+you can just as easily respond w/ HTML if your application does
+server-side rendering. Using the `HTML()` and `HTMLTemplate()`
+functions, you can easily send 200 responses w/ the `Content-Type`
+set to `text/html; charset=utf-8`.
+
+You can respond with a pre-rendered block of HTML.
+
+```go
+func LoginHandler(w http.ResponseWriter, req *http.Request) {
+    response := respond.To(w, req)
+
+    // ... do some work ...
+    
+    html := "<h1>Hello " + username + "</h1>"
+    response.HTML(html)
+}
+```
+
+Or you can use a standard Go `html/template`. The `Responder` will
+evaluate the template for you, and the resulting HTML will be
+streamed to the HTTP response.
+
+```go
+var loginTemplate := template.Must(template.Parse(`
+    <h1>Hello {{ .Username }}</h1>
+`))
+
+func LoginHandler(w http.ResponseWriter, req *http.Request) {
+    response := respond.To(w, req)
+
+    // ... do some work ...
+    
+    response.HTMLTemplate(loginTemplate, LoginContext{
+        Username: username,
+    })
+}
+```
+
 ### FAQs
 
 #### Why Not Just Use Gin/Chi/Echo/Fiber/Buffalo/etc?
@@ -281,6 +325,40 @@ caller is asking for XML they can get it. Realistically, if you
 jumped on the Go bandwagon to build HTTP service gateways you're
 likely using JSON anyway, so this one is fairly low priority.
 
+#### Do You Support Other Template Engines for `HTMLTemplate()`?
+
+Not directly. If you plan to call `HTMLTemplate()` then you have
+to use standard Go templates - which is sufficient for most use
+cases.
+
+If you do use another template engine like [Plush](https://github.com/gobuffalo/plush),
+you can just invoke its evaluation function yourself and pass
+the resulting HTML string to `HTML()`. It's not the most memory
+efficient, but it's probably more than sufficient for most workloads.
+
+
+```go
+responder := respond.To(w, req)
+
+ctx := plush.NewContext()
+ctx.Set("username", "BobLoblaw")
+
+html, err := plush.Render(loginTemplate, ctx)
+responder.HTML(html, err)
+```
+
+You can even tighten this up more since Go will pass along the
+multiple return values properly:
+
+```go
+responder := respond.To(w, req)
+
+ctx := plush.NewContext()
+ctx.Set("username", "BobLoblaw")
+
+responder.HTML(plush.Render(loginTemplate, ctx))
+```
+
 #### There's No Function For The HTTP Status Code I Want To Send Back
 
 To keep the library as lean and mean as possible, `respond` only
@@ -293,12 +371,3 @@ responder := respond.To(w, req)
 ...
 responder.Reply(http.StatusTeapot, "I'm a teapot")
 ```
-
-#### Can I Send HTML Back?
-
-That's on my "up-next" list of things to tackle. You could hack
-it right now by using the `ServeBytes("index.html", "... some HTML ...")`,
-but I realize that's clunky as hell. I plan to add first-class support
-so that you can either feed raw HTML strings or utilize the
-`template/html` package for dynamic HTML. I started with my own
-needs for a REST API and that's the next logical step.

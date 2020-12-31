@@ -3,6 +3,7 @@ package respond_test
 import (
 	"bytes"
 	"fmt"
+	"html/template"
 	"net/http"
 	"testing"
 
@@ -190,6 +191,82 @@ func (suite RespondSuite) TestNotModified() {
 	suite.assertEmptyBody(w)
 }
 
+func (suite RespondSuite) TestHTML() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	respond.To(w, req).HTML("<p>hello <b>world</b></p>")
+	suite.assertStatus(w, 200)
+	suite.assertHeader(w, "Content-Type", "text/html; charset=utf-8")
+	suite.assertBody(w, "<p>hello <b>world</b></p>")
+}
+
+func (suite RespondSuite) TestHTML_empty() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	respond.To(w, req).HTML("")
+	suite.assertStatus(w, 200)
+	suite.assertHeader(w, "Content-Type", "text/html; charset=utf-8")
+	suite.assertEmptyBody(w)
+}
+
+func (suite RespondSuite) TestHTML_error() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	err := errorWithStatus{
+		status:  503,
+		message: "it's dead jim",
+	}
+	respond.To(w, req).HTML("<p>hello <b>world</b></p>", err)
+	suite.assertError(w, 503, "it's dead jim")
+}
+
+func (suite RespondSuite) TestHTMLTemplate() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	temp := template.Must(template.New("HTMLTemplate").Parse(`<p>{{ . }} is {{ . }}</p>`))
+	respond.To(w, req).HTMLTemplate(temp, "Bob")
+
+	suite.assertBody(w, "<p>Bob is Bob</p>")
+}
+
+func (suite RespondSuite) TestHTMLTemplate_error() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	temp := template.Must(template.New("HTMLTemplate").Parse(`<p>{{ . }} is {{ . }}</p>`))
+	err := errorWithStatus{
+		status:  503,
+		message: "it's dead jim",
+	}
+	respond.To(w, req).HTMLTemplate(temp, "Bob", err)
+
+	suite.assertError(w, 503, "it's dead jim")
+}
+
+func (suite RespondSuite) TestHTMLTemplate_nilTemplate() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	respond.To(w, req).HTMLTemplate(nil, "Bob")
+	suite.assertStatus(w, 200)
+	suite.assertEmptyBody(w)
+}
+
+// When the template fails to evaluate, you should get a 500 error.
+func (suite RespondSuite) TestHTMLTemplate_evalError() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	temp := template.Must(template.New("HTMLTemplate").Parse(`<p>{{ .Foo }} is {{ . }}</p>`))
+	respond.To(w, req).HTMLTemplate(temp, "Bob")
+
+	suite.assertStatus(w, 500)
+}
+
 func (suite RespondSuite) TestRedirect_exact() {
 	w := newResponseWriter()
 	req := newRequest()
@@ -281,6 +358,12 @@ func (suite RespondSuite) TestMethodNotAllowed() {
 func (suite RespondSuite) TestConflict() {
 	suite.runErrorTests(409, func(r respond.Responder) responderErrorFunc {
 		return r.Conflict
+	})
+}
+
+func (suite RespondSuite) TestGone() {
+	suite.runErrorTests(410, func(r respond.Responder) responderErrorFunc {
+		return r.Gone
 	})
 }
 
