@@ -17,6 +17,14 @@ func To(w http.ResponseWriter, req *http.Request) Responder {
 	return Responder{writer: w, request: req}
 }
 
+// Redirector defines a type that your handler can "return" to one of the responder functions to indicate that this
+// should be a redirect response instead of the standard 2XX style response you intended. This can also be used in
+// general purpose Reply() calls to trigger redirects as well.
+type Redirector interface {
+	// Redirect returns the URL that you want the response to redirect to.
+	Redirect() string
+}
+
 // Responder provides helper functions for marshaling Go values/streams to send back to the user as well as
 // applying the correct status code and headers. It's the core data structure for this package.
 type Responder struct {
@@ -26,8 +34,14 @@ type Responder struct {
 
 // Reply lets you respond with the custom status code of your choice and a JSON-marshaled version of your value.
 func (r Responder) Reply(status int, value interface{}, errs ...error) {
+	// Assume that any error we receive indicates that the operation failed, so respond accordingly.
 	if err := firstError(errs...); err != nil {
 		r.Fail(err)
+		return
+	}
+	// The value you're returning is telling us redirect to another URL instead.
+	if redirector, ok := value.(Redirector); ok {
+		r.Redirect(redirector.Redirect())
 		return
 	}
 	writeJSON(r.writer, status, value)
@@ -297,6 +311,10 @@ func firstError(errs ...error) error {
 	return nil
 }
 
+// fileNameToContentType to take a file name/path and analyzes the file extension. With that extension, this
+// will return the most relevant mime encoding type string. For example "foo/bar/baz.jpg" will return "image/jpeg".
+// This returns "application/octet-stream" for any file name that doesn't have an extension or for any
+// extension that the OS doesn't have a mime mapping for.
 func fileNameToContentType(fileName string) string {
 	extPeriod := strings.LastIndex(fileName, ".")
 	if extPeriod < 0 {

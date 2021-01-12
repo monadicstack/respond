@@ -775,6 +775,34 @@ func (suite RespondSuite) TestDownloadBytes_error() {
 	suite.assertError(w, 504, "rats")
 }
 
+func (suite RespondSuite) TestReply_redirect() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	respond.To(w, req).Reply(200, fakeRedirector{URL: "https://google.com"})
+	suite.assertStatus(w, 307)
+	suite.assertHeader(w, "Location", "https://google.com")
+	suite.assertEmptyBody(w)
+}
+
+func (suite RespondSuite) TestReply_redirect_forceStatus() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	respond.To(w, req).Reply(308, fakeRedirector{URL: "https://google.com"})
+	suite.assertStatus(w, 307)
+	suite.assertHeader(w, "Location", "https://google.com")
+	suite.assertEmptyBody(w)
+}
+
+func (suite RespondSuite) TestReply_redirect_error() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	respond.To(w, req).Reply(308, fakeRedirector{URL: "https://google.com"}, fmt.Errorf("crap"))
+	suite.assertError(w, 500, "crap")
+}
+
 /*
  * -------- Assertion Helpers ------------------
  */
@@ -923,4 +951,12 @@ func (b badReader) Read(_ []byte) (n int, err error) {
 		status:  b.failureStatus,
 		message: "bad monkey",
 	}
+}
+
+type fakeRedirector struct {
+	URL string
+}
+
+func (r fakeRedirector) Redirect() string {
+	return r.URL
 }
