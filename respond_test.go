@@ -267,6 +267,24 @@ func (suite RespondSuite) TestHTMLTemplate_evalError() {
 	suite.assertStatus(w, 500)
 }
 
+func (suite RespondSuite) TestRedirect_empty() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	// We don't really care about what the error "says" as long as it fails w/ a 500
+	respond.To(w, req).Redirect("")
+	suite.assertStatus(w, 500)
+}
+
+func (suite RespondSuite) TestRedirect_emptyAfterSubstitution() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	// We don't really care about what the error "says" as long as it fails w/ a 500
+	respond.To(w, req).Redirect("%s%s", "", "")
+	suite.assertStatus(w, 500)
+}
+
 func (suite RespondSuite) TestRedirect_exact() {
 	w := newResponseWriter()
 	req := newRequest()
@@ -287,6 +305,65 @@ func (suite RespondSuite) TestRedirect_substitutions() {
 	suite.assertHeader(w, "Location", "https://google.com?q=hello")
 }
 
+func (suite RespondSuite) TestRedirectTo_nil() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	// We don't really care about what the error "says" as long as it fails w/ a 500
+	respond.To(w, req).RedirectTo(nil)
+	suite.assertStatus(w, 500)
+}
+
+func (suite RespondSuite) TestRedirectTo_valid() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	respond.To(w, req).RedirectTo(fakeRedirector{URL: "https://google.com/foo"})
+	suite.assertStatus(w, 307)
+	suite.assertHeader(w, "Location", "https://google.com/foo")
+}
+
+func (suite RespondSuite) TestRedirectTo_error() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	respond.To(w, req).RedirectTo(fakeRedirector{URL: "https://google.com/foo"}, errorWithStatus{
+		status:  403,
+		message: "nope",
+	})
+	suite.assertError(w, 403, "nope")
+}
+
+// Should ignore the fact that the Redirector is nil when there's an error present.
+func (suite RespondSuite) TestRedirectTo_errorNilInput() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	respond.To(w, req).RedirectTo(nil, errorWithStatus{
+		status:  403,
+		message: "nope",
+	})
+	suite.assertError(w, 403, "nope")
+}
+
+func (suite RespondSuite) TestRedirectPermanent_empty() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	// We don't really care about what the error "says" as long as it fails w/ a 500
+	respond.To(w, req).RedirectPermanent("")
+	suite.assertStatus(w, 500)
+}
+
+func (suite RespondSuite) TestRedirectPermanent_emptyAfterSubstitution() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	// We don't really care about what the error "says" as long as it fails w/ a 500
+	respond.To(w, req).RedirectPermanent("%s%s", "", "")
+	suite.assertStatus(w, 500)
+}
+
 func (suite RespondSuite) TestRedirectPermanent_exact() {
 	w := newResponseWriter()
 	req := newRequest()
@@ -305,6 +382,47 @@ func (suite RespondSuite) TestRedirectPermanent_substitutions() {
 	suite.assertStatus(w, 308)
 	suite.assertHeader(w, "Content-Type", "")
 	suite.assertHeader(w, "Location", "https://google.com?q=hello")
+}
+
+func (suite RespondSuite) TestRedirectPermanentTo_nil() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	// We don't really care about what the error "says" as long as it fails w/ a 500
+	respond.To(w, req).RedirectPermanentTo(nil)
+	suite.assertStatus(w, 500)
+}
+
+func (suite RespondSuite) TestRedirectPermanentTo_valid() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	respond.To(w, req).RedirectPermanentTo(fakeRedirector{URL: "https://google.com/foo"})
+	suite.assertStatus(w, 308)
+	suite.assertHeader(w, "Location", "https://google.com/foo")
+}
+
+func (suite RespondSuite) TestRedirectPermanentTo_error() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	respond.To(w, req).RedirectPermanentTo(fakeRedirector{URL: "https://google.com/foo"}, errorWithStatus{
+		status:  403,
+		message: "nope",
+	})
+	suite.assertError(w, 403, "nope")
+}
+
+// Should ignore the fact that the Redirector is nil when there's an error present.
+func (suite RespondSuite) TestRedirectPermanentTo_errorNilInput() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	respond.To(w, req).RedirectPermanentTo(nil, errorWithStatus{
+		status:  403,
+		message: "nope",
+	})
+	suite.assertError(w, 403, "nope")
 }
 
 func (suite RespondSuite) TestFail_unknownCode() {

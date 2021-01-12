@@ -186,14 +186,50 @@ func (r Responder) DownloadBytes(fileName string, data []byte, errs ...error) {
 
 // Redirect performs a 307-style TEMPORARY redirect to the given resource. You can use printf-style
 // formatting to make it easier to build the location you're redirecting to.
-func (r Responder) Redirect(uri string, args ...interface{}) {
-	http.Redirect(r.writer, r.request, fmt.Sprintf(uri, args...), http.StatusTemporaryRedirect)
+func (r Responder) Redirect(uriFormat string, args ...interface{}) {
+	uri := fmt.Sprintf(uriFormat, args...)
+	if uri == "" {
+		r.Fail(fmt.Errorf("unable to redirect to empty url"))
+		return
+	}
+	http.Redirect(r.writer, r.request, uri, http.StatusTemporaryRedirect)
+}
+
+// RedirectTo performs a 307-style TEMPORARY redirect to the URL returned by calling Redirect() on your value.
+func (r Responder) RedirectTo(redirector Redirector, errs ...error) {
+	if err := firstError(errs...); err != nil {
+		r.Fail(err)
+		return
+	}
+	if redirector == nil {
+		r.Fail(fmt.Errorf("unable to redirect using nil redirector"))
+		return
+	}
+	r.Redirect(redirector.Redirect())
 }
 
 // RedirectPermanent performs a 308-style PERMANENT redirect to the given resource. You can use printf-style
 // formatting to make it easier to build the location you're redirecting to.
-func (r Responder) RedirectPermanent(uri string, args ...interface{}) {
-	http.Redirect(r.writer, r.request, fmt.Sprintf(uri, args...), http.StatusPermanentRedirect)
+func (r Responder) RedirectPermanent(uriFormat string, args ...interface{}) {
+	uri := fmt.Sprintf(uriFormat, args...)
+	if uri == "" {
+		r.Fail(fmt.Errorf("unable to redirect to empty url"))
+		return
+	}
+	http.Redirect(r.writer, r.request, uri, http.StatusPermanentRedirect)
+}
+
+// RedirectPermanentTo performs a 308-style PERMANENT redirect to the URL returned by calling Redirect() on your value.
+func (r Responder) RedirectPermanentTo(redirector Redirector, errs ...error) {
+	if err := firstError(errs...); err != nil {
+		r.Fail(err)
+		return
+	}
+	if redirector == nil {
+		r.Fail(fmt.Errorf("unable to redirect using nil redirector"))
+		return
+	}
+	r.RedirectPermanent(redirector.Redirect())
 }
 
 // NotModified writes a 304 response with no content. You typically will use this when performing
