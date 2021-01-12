@@ -83,12 +83,6 @@ response.NoContent()
 
 // Responds w/ a 304 and no body. 
 response.NotModified()
-
-// Responds w/ a 307-style redirect to the given URL
-response.Redirect("https://google.com?q=", searchText)
-
-// Responds w/ a 308-style redirect to the given URL
-response.RedirectPermanent("https://google.com?q=", searchText)
 ```
 
 ### Error Handling
@@ -235,6 +229,78 @@ func MyHandler(w http.ResponseWriter, req *http.Request) {
     response.Ok(user, err)
 }
 ```
+
+### Redirects
+
+Depending on what will make your handler more clear, you have two
+options for triggering an HTTP redirect response:
+
+```go
+func MyHandler(w http.ResponseWriter, req *http.Request) {
+    response := respond.To(w, req)
+
+    fileID := param(req, "file")
+    file, ok := fileStore.GetFileInfo(fileID)
+    if !ok {
+        response.NotFound("file not found: %s", fileID)
+        return
+    }
+
+    response.Redirect("https://%s.s3.amazonaws.com/%s/%s",
+    	file.Bucket,
+    	file.Directory,
+    	file.Name,
+    )
+}
+```
+
+This is fine when your redirects are simple, but the more complex
+your substitutions are, the more you lose clarity because your focus
+is drawn to the URL substitution rather than the actual business logic.
+
+Alternately, you can use `RedirectTo()` and pass any value that implements
+the `Redirector` interface; basically can return the fully-formed URL
+that you want to redirect to. This can help clean up your handlers by
+moving the URL building logic elsewhere, so your handler stays lean
+and mean:
+
+```go
+func MyHandler(w http.ResponseWriter, req *http.Request) {
+    response := respond.To(w, req)
+
+    fileID := param(req, "file")
+    file, ok := fileStore.GetFileInfo(fileID)
+    if !ok {
+        response.NotFound("file not found: %s", fileID)
+        return
+    }
+    response.RedirectTo(file)
+}
+```
+
+```go
+type S3FileInfo struct {
+    Bucket    string
+    Directory string
+    Name      string
+}
+
+func (f S3FileInfo) Redirect() string {
+    return fmt.Sprintf("https://%s.s3.amazonaws.com/%s/%s", 
+        file.Bucket,
+        file.Directory,
+        file.Name,
+    )
+}
+```
+
+As you can see, your handler is a bit cleaner, and it's easier to
+reason about what it's actually doing. Additionally, you can write
+URL formatting tests independent of your handler tests.
+
+One final note. Both `Redirect()` and `RedirectTo()` have "permanent"
+variants that result in a 308 HTTP status rather than a 307:
+`RedirectPermanent()` and `RedirectPermanentTo()`.
 
 ### Responding With Images And Other Raw Files
 
