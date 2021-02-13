@@ -1,4 +1,4 @@
-module github.com/robsignorelli/respond
+module github.com/monadicstack/respond
 
 go 1.15
 
