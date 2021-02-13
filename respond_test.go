@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/robsignorelli/respond"
+	"github.com/monadicstack/respond"
 	"github.com/stretchr/testify/suite"
 )
 

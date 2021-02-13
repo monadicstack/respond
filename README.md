@@ -1,6 +1,6 @@
 # Respond
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/robsignorelli/respond)](https://goreportcard.com/report/github.com/robsignorelli/respond)
+[![Go Report Card](https://goreportcard.com/badge/github.com/monadicstack/respond)](https://goreportcard.com/report/github.com/monadicstack/respond)
 
 This package reduces the verbosity associated with responding to HTTP
 requests when using standard `net/http` handlers (with a bent towards JSON
@@ -17,7 +17,7 @@ send your result to the caller.
 ### Getting Started
 
 ```
-go get -u github.com/robsignorelli/respond
+go get -u github.com/monadicstack/respond
 ```
 
 ### Basic Example
