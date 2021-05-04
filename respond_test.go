@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"html/template"
+	"io"
 	"net/http"
 	"testing"
 
@@ -423,6 +424,185 @@ func (suite RespondSuite) TestRedirectPermanentTo_errorNilInput() {
 		message: "nope",
 	})
 	suite.assertError(w, 403, "nope")
+}
+
+// Should allow you to write "raw" results by implementing io.Reader.
+func (suite RespondSuite) TestRaw_empty() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	respond.To(w, req).Ok(bytes.NewBufferString(""))
+	suite.assertStatus(w, 200)
+	suite.assertRaw(w, "")
+	suite.assertHeader(w, "Content-Type", "application/octet-stream")
+	suite.assertHeader(w, "Content-Disposition", "inline")
+}
+
+// Should allow you to write "raw" results to non-200 status success codes.
+func (suite RespondSuite) TestRaw_status() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	respond.To(w, req).Created(bytes.NewBufferString(""))
+	suite.assertStatus(w, 201)
+	suite.assertRaw(w, "")
+	suite.assertHeader(w, "Content-Type", "application/octet-stream")
+	suite.assertHeader(w, "Content-Disposition", "inline")
+}
+
+// Should allow you to write "raw" string results by using an io.Reader.
+func (suite RespondSuite) TestRaw_text() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	respond.To(w, req).Ok(bytes.NewBufferString("hello world"))
+	suite.assertStatus(w, 200)
+	suite.assertRaw(w, "hello world")
+	suite.assertHeader(w, "Content-Type", "application/octet-stream")
+	suite.assertHeader(w, "Content-Disposition", "inline")
+}
+
+// Should allow you to write "raw" binary results by using an io.Reader.
+func (suite RespondSuite) TestRaw_binary() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	respond.To(w, req).Ok(bytes.NewBuffer([]byte{0x42, 0x43, 0x44}))
+	suite.assertStatus(w, 200)
+	suite.assertRaw(w, string([]byte{0x42, 0x43, 0x44}))
+	suite.assertHeader(w, "Content-Type", "application/octet-stream")
+	suite.assertHeader(w, "Content-Disposition", "inline")
+}
+
+// Should allow you to specify the Content-Type by implementing ContentTypeSpecifier.
+func (suite RespondSuite) TestRaw_contentType() {
+	type R struct {
+		rawReader
+		rawContentType
+	}
+
+	w := newResponseWriter()
+	req := newRequest()
+
+	result := R{}
+	result.reader = bytes.NewBufferString("Do you see what happens, Larry?")
+	result.contentType = "text/plain"
+
+	respond.To(w, req).Ok(result)
+	suite.assertStatus(w, 200)
+	suite.assertRaw(w, "Do you see what happens, Larry?")
+	suite.assertHeader(w, "Content-Type", "text/plain")
+	suite.assertHeader(w, "Content-Disposition", "inline")
+}
+
+// When implementing ContentTypeSpecifier, should use default type when returning "".
+func (suite RespondSuite) TestRaw_contentTypeEmpty() {
+	type R struct {
+		rawReader
+		rawContentType
+	}
+
+	w := newResponseWriter()
+	req := newRequest()
+
+	result := R{}
+	result.reader = bytes.NewBufferString("Do you see what happens, Larry?")
+
+	respond.To(w, req).Ok(result)
+	suite.assertStatus(w, 200)
+	suite.assertRaw(w, "Do you see what happens, Larry?")
+	suite.assertHeader(w, "Content-Type", "application/octet-stream")
+	suite.assertHeader(w, "Content-Disposition", "inline")
+}
+
+// Should allow you to specify the Content-Disposition by implementing FileNameSpecifier.
+func (suite RespondSuite) TestRaw_contentDisposition() {
+	type R struct {
+		rawReader
+		rawFileName
+	}
+
+	w := newResponseWriter()
+	req := newRequest()
+
+	result := R{}
+	result.reader = bytes.NewBufferString("Do you see what happens, Larry?")
+	result.fileName = "stranger.log"
+
+	respond.To(w, req).Ok(result)
+	suite.assertStatus(w, 200)
+	suite.assertRaw(w, "Do you see what happens, Larry?")
+	suite.assertHeader(w, "Content-Type", "application/octet-stream")
+	suite.assertHeader(w, "Content-Disposition", `attachment; filename="stranger.log"`)
+}
+
+// When implementing FileNameSpecifier, should still be "inline" if you return "".
+func (suite RespondSuite) TestRaw_contentDispositionEmpty() {
+	type R struct {
+		rawReader
+		rawFileName
+	}
+
+	w := newResponseWriter()
+	req := newRequest()
+
+	result := R{}
+	result.reader = bytes.NewBufferString("Do you see what happens, Larry?")
+
+	respond.To(w, req).Ok(result)
+	suite.assertStatus(w, 200)
+	suite.assertRaw(w, "Do you see what happens, Larry?")
+	suite.assertHeader(w, "Content-Type", "application/octet-stream")
+	suite.assertHeader(w, "Content-Disposition", "inline")
+}
+
+// Should allow you to specify the Content-Type AND Content-Disposition by implementing
+// all of the necessary types.
+func (suite RespondSuite) TestRaw_contentTypeAndDisposition() {
+	type R struct {
+		rawReader
+		rawFileName
+		rawContentType
+	}
+
+	w := newResponseWriter()
+	req := newRequest()
+
+	result := R{}
+	result.reader = bytes.NewBufferString("Do you see what happens, Larry?")
+	result.contentType = "text/plain"
+	result.fileName = "stranger.log"
+
+	respond.To(w, req).Ok(result)
+	suite.assertStatus(w, 200)
+	suite.assertRaw(w, "Do you see what happens, Larry?")
+	suite.assertHeader(w, "Content-Type", "text/plain")
+	suite.assertHeader(w, "Content-Disposition", `attachment; filename="stranger.log"`)
+}
+
+// If your raw reader is also an io.Closer, make sure to close it after responding automiatically.
+func (suite RespondSuite) TestRaw_close() {
+	type R struct {
+		rawReader
+		rawCloser
+	}
+
+	w := newResponseWriter()
+	req := newRequest()
+
+	result := R{}
+	result.reader = bytes.NewBufferString("Do you see what happens, Larry?")
+
+	respond.To(w, req).Ok(&result)
+	suite.Require().True(result.closed, "Raw result was not automatically closed despite implementing io.Closer")
+}
+
+func (suite RespondSuite) TestJSON_unableToMarshal() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	respond.To(w, req).Ok(make(chan int, 5))
+	suite.assertStatus(w, 500)
 }
 
 func (suite RespondSuite) TestFail_unknownCode() {
@@ -983,6 +1163,10 @@ func (suite RespondSuite) assertJSON(res *mockResponseWriter, field string, valu
 	}
 }
 
+func (suite RespondSuite) assertRaw(res *mockResponseWriter, rawData string) {
+	suite.Require().Equal(string(res.Body), rawData)
+}
+
 /*
  * -------- Custom Response/Error Types ------------------
  */
@@ -1077,4 +1261,37 @@ type fakeRedirector struct {
 
 func (r fakeRedirector) Redirect() string {
 	return r.URL
+}
+
+type rawReader struct {
+	reader io.Reader
+}
+
+func (r rawReader) Read(buf []byte) (int, error) {
+	return r.reader.Read(buf)
+}
+
+type rawCloser struct {
+	closed bool
+}
+
+func (r *rawCloser) Close() error {
+	r.closed = true
+	return nil
+}
+
+type rawContentType struct {
+	contentType string
+}
+
+func (r rawContentType) ContentType() string {
+	return r.contentType
+}
+
+type rawFileName struct {
+	fileName string
+}
+
+func (r rawFileName) FileName() string {
+	return r.fileName
 }
