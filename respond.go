@@ -25,6 +25,35 @@ type Redirector interface {
 	Redirect() string
 }
 
+// ContentTypeSpecified provides details about a file-based response to indicate what we should
+// use as the "Content-Type" header. Any io.Reader that 'respond' comes across will be
+// treated as raw bytes, not a JSON-marshaled payload. By default, the Content-Type of the response
+// will be "application/octet-stream", but if your result implements this interface, you can tell the
+// responder what type to use instead. For instance, if the result is a JPG, you can have your result
+// return "image/jpeg" and 'respond' will use that in the header instead of octet-stream.
+type ContentTypeSpecified interface {
+	// ContentType returns the "Content-Type" header you want to apply to the HTTP response. This
+	// only applies when the result is an io.Reader, so you're returning raw results.
+	ContentType() string
+}
+
+// FileNameSpecified provides the 'filename' details to use when filling out the HTTP Content-Disposition
+// header. Any io.Reader that 'respond' comes across will be treated as raw bytes, not a JSON-marshaled
+// payload. By default, 'respond' will specify "inline" for all raw responses (great for images and
+// scripts you want to display inline in your UI).
+//
+// If you implement this interface, you can change the behavior to have the browser/client trigger a
+// download of this asset instead. The file name you return here will dictate the default file name
+// proposed by the save dialog.
+type FileNameSpecified interface {
+	// FileName triggers an attachment-style value for the Content-Disposition header when writing
+	// raw HTTP responses. When this returns an empty string, the response's disposition should
+	// be "inline". When it's any other value, it will be "attachment; filename=" with this value.
+	//
+	// This only applies when the result is an io.Reader, so you're returning raw results.
+	FileName() string
+}
+
 // Responder provides helper functions for marshaling Go values/streams to send back to the user as well as
 // applying the correct status code and headers. It's the core data structure for this package.
 type Responder struct {
@@ -39,12 +68,18 @@ func (r Responder) Reply(status int, value interface{}, errs ...error) {
 		r.Fail(err)
 		return
 	}
-	// The value you're returning is telling us redirect to another URL instead.
-	if redirector, ok := value.(Redirector); ok {
-		r.Redirect(redirector.Redirect())
-		return
+
+	switch v := value.(type) {
+	case Redirector:
+		// The value you're returning is telling us redirect to another URL instead.
+		r.Redirect(v.Redirect())
+	case io.Reader:
+		// The value looks like a file or some other raw, non-JSON content
+		writeRaw(r.writer, status, v)
+	default:
+		// It's just some returned value that we should marshal as JSON and send back.
+		writeJSON(r.writer, status, value)
 	}
-	writeJSON(r.writer, status, value)
 }
 
 // Ok writes a 200 style response to the caller by marshalling the given raw value. If
@@ -329,11 +364,65 @@ func (r Responder) GatewayTimeout(msg string, args ...interface{}) {
 	r.Fail(errorResponse{Status: http.StatusGatewayTimeout, Message: msg})
 }
 
+// writeJSON marshals the result 'value' as JSON and writes the bytes to the response.
 func writeJSON(res http.ResponseWriter, status int, value interface{}) {
-	jsonBytes, _ := json.Marshal(value)
+	jsonBytes, err := json.Marshal(value)
+	if err != nil {
+		http.Error(res, "json marshal error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	res.Header().Set("Content-Type", "application/json")
 	res.WriteHeader(status)
 	_, _ = res.Write(jsonBytes)
+}
+
+// writeRaw accepts a reader containing the bytes of some file or raw set of data that the
+// user wants to write to the caller.
+func writeRaw(res http.ResponseWriter, status int, value io.Reader) {
+	if closer, ok := value.(io.Closer); ok {
+		defer func() { _ = closer.Close() }()
+	}
+
+	res.Header().Set("Content-Type", rawContentType(value))
+	res.Header().Set("Content-Disposition", rawContentDisposition(value))
+	res.WriteHeader(status)
+	_, _ = io.Copy(res, value)
+}
+
+// rawContentType assumes "application/octet-stream" unless the return value implements
+// the ContentTypeSpecified interface. In that case, this will return the content type
+// that the reader specifies. The result is a valid value for the HTTP "Content-Type" header.
+func rawContentType(value io.Reader) string {
+	contentTyped, ok := value.(ContentTypeSpecified)
+	if !ok {
+		return "application/octet-stream"
+	}
+
+	contentType := contentTyped.ContentType()
+	if contentType == "" {
+		return "application/octet-stream"
+	}
+
+	return contentType
+}
+
+// rawContentDisposition returns an appropriate value for the "Content-Disposition"
+// HTTP header. In most cases, this will return "inline", but if the reader implements
+// the FileNameSpecified interface, this will return "attachment; filename=" with the
+// reader's name specified.
+func rawContentDisposition(value io.Reader) string {
+	named, ok := value.(FileNameSpecified)
+	if !ok {
+		return "inline"
+	}
+
+	fileName := named.FileName()
+	if fileName == "" {
+		return "inline"
+	}
+
+	return `attachment; filename="` + fileName + `"`
 }
 
 // firstError grabs the first non-nil error in the given list of errors. This will return
