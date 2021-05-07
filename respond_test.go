@@ -427,11 +427,37 @@ func (suite RespondSuite) TestRedirectPermanentTo_errorNilInput() {
 }
 
 // Should allow you to write "raw" results by implementing io.Reader.
-func (suite RespondSuite) TestRaw_empty() {
+func (suite RespondSuite) TestRaw_nil() {
+	type R struct {
+		rawContentReader
+	}
+
 	w := newResponseWriter()
 	req := newRequest()
 
-	respond.To(w, req).Ok(bytes.NewBufferString(""))
+	result := R{}
+	result.reader = nil
+
+	respond.To(w, req).Accepted(result)
+	suite.assertStatus(w, 202)
+	suite.assertRaw(w, "")
+	suite.assertHeader(w, "Content-Type", "")
+	suite.assertHeader(w, "Content-Disposition", "")
+}
+
+// Should allow you to write "raw" results by implementing io.Reader.
+func (suite RespondSuite) TestRaw_empty() {
+	type R struct {
+		rawContentReader
+	}
+
+	w := newResponseWriter()
+	req := newRequest()
+
+	result := R{}
+	result.reader = bytes.NewBufferString("")
+
+	respond.To(w, req).Ok(result)
 	suite.assertStatus(w, 200)
 	suite.assertRaw(w, "")
 	suite.assertHeader(w, "Content-Type", "application/octet-stream")
@@ -440,10 +466,17 @@ func (suite RespondSuite) TestRaw_empty() {
 
 // Should allow you to write "raw" results to non-200 status success codes.
 func (suite RespondSuite) TestRaw_status() {
+	type R struct {
+		rawContentReader
+	}
+
 	w := newResponseWriter()
 	req := newRequest()
 
-	respond.To(w, req).Created(bytes.NewBufferString(""))
+	result := R{}
+	result.reader = bytes.NewBufferString("")
+
+	respond.To(w, req).Created(result)
 	suite.assertStatus(w, 201)
 	suite.assertRaw(w, "")
 	suite.assertHeader(w, "Content-Type", "application/octet-stream")
@@ -452,10 +485,17 @@ func (suite RespondSuite) TestRaw_status() {
 
 // Should allow you to write "raw" string results by using an io.Reader.
 func (suite RespondSuite) TestRaw_text() {
+	type R struct {
+		rawContentReader
+	}
+
 	w := newResponseWriter()
 	req := newRequest()
 
-	respond.To(w, req).Ok(bytes.NewBufferString("hello world"))
+	result := R{}
+	result.reader = bytes.NewBufferString("hello world")
+
+	respond.To(w, req).Ok(result)
 	suite.assertStatus(w, 200)
 	suite.assertRaw(w, "hello world")
 	suite.assertHeader(w, "Content-Type", "application/octet-stream")
@@ -464,10 +504,17 @@ func (suite RespondSuite) TestRaw_text() {
 
 // Should allow you to write "raw" binary results by using an io.Reader.
 func (suite RespondSuite) TestRaw_binary() {
+	type R struct {
+		rawContentReader
+	}
+
 	w := newResponseWriter()
 	req := newRequest()
 
-	respond.To(w, req).Ok(bytes.NewBuffer([]byte{0x42, 0x43, 0x44}))
+	result := R{}
+	result.reader = bytes.NewBuffer([]byte{0x42, 0x43, 0x44})
+
+	respond.To(w, req).Ok(result)
 	suite.assertStatus(w, 200)
 	suite.assertRaw(w, string([]byte{0x42, 0x43, 0x44}))
 	suite.assertHeader(w, "Content-Type", "application/octet-stream")
@@ -477,7 +524,7 @@ func (suite RespondSuite) TestRaw_binary() {
 // Should allow you to specify the Content-Type by implementing ContentTypeSpecifier.
 func (suite RespondSuite) TestRaw_contentType() {
 	type R struct {
-		rawReader
+		rawContentReader
 		rawContentType
 	}
 
@@ -498,7 +545,7 @@ func (suite RespondSuite) TestRaw_contentType() {
 // When implementing ContentTypeSpecifier, should use default type when returning "".
 func (suite RespondSuite) TestRaw_contentTypeEmpty() {
 	type R struct {
-		rawReader
+		rawContentReader
 		rawContentType
 	}
 
@@ -518,8 +565,8 @@ func (suite RespondSuite) TestRaw_contentTypeEmpty() {
 // Should allow you to specify the Content-Disposition by implementing FileNameSpecifier.
 func (suite RespondSuite) TestRaw_contentDisposition() {
 	type R struct {
-		rawReader
-		rawFileName
+		rawContentReader
+		rawContentFileName
 	}
 
 	w := newResponseWriter()
@@ -539,8 +586,8 @@ func (suite RespondSuite) TestRaw_contentDisposition() {
 // When implementing FileNameSpecifier, should still be "inline" if you return "".
 func (suite RespondSuite) TestRaw_contentDispositionEmpty() {
 	type R struct {
-		rawReader
-		rawFileName
+		rawContentReader
+		rawContentFileName
 	}
 
 	w := newResponseWriter()
@@ -560,8 +607,8 @@ func (suite RespondSuite) TestRaw_contentDispositionEmpty() {
 // all of the necessary types.
 func (suite RespondSuite) TestRaw_contentTypeAndDisposition() {
 	type R struct {
-		rawReader
-		rawFileName
+		rawContentReader
+		rawContentFileName
 		rawContentType
 	}
 
@@ -580,21 +627,31 @@ func (suite RespondSuite) TestRaw_contentTypeAndDisposition() {
 	suite.assertHeader(w, "Content-Disposition", `attachment; filename="stranger.log"`)
 }
 
-// If your raw reader is also an io.Closer, make sure to close it after responding automiatically.
+// If your raw reader is also an io.Closer, make sure to close it after responding automatically.
 func (suite RespondSuite) TestRaw_close() {
 	type R struct {
-		rawReader
-		rawCloser
+		rawContentReader
 	}
 
 	w := newResponseWriter()
 	req := newRequest()
 
+	closer := readCloser{reader: bytes.NewBufferString("Do you see what happens, Larry?")}
 	result := R{}
-	result.reader = bytes.NewBufferString("Do you see what happens, Larry?")
+	result.reader = &closer
 
 	respond.To(w, req).Ok(&result)
-	suite.Require().True(result.closed, "Raw result was not automatically closed despite implementing io.Closer")
+	suite.Require().True(closer.closed, "Raw result was not automatically closed despite implementing io.Closer")
+}
+
+// Ensures that we only go "raw" if the result has the Content() attribute to RETURN a
+// reader. Being a reader, yourself, doesn't count. We should still treat that as JSON.
+func (suite RespondSuite) TestRaw_mustCompose() {
+	w := newResponseWriter()
+	req := newRequest()
+
+	respond.To(w, req).Ok(bytes.NewBufferString("Do you see what happens, Larry?"))
+	suite.assertRaw(w, "{}")
 }
 
 func (suite RespondSuite) TestJSON_unableToMarshal() {
@@ -1263,19 +1320,24 @@ func (r fakeRedirector) Redirect() string {
 	return r.URL
 }
 
-type rawReader struct {
+type rawContentReader struct {
 	reader io.Reader
 }
 
-func (r rawReader) Read(buf []byte) (int, error) {
-	return r.reader.Read(buf)
+func (r rawContentReader) Content() io.Reader {
+	return r.reader
 }
 
-type rawCloser struct {
+type readCloser struct {
+	reader io.Reader
 	closed bool
 }
 
-func (r *rawCloser) Close() error {
+func (r *readCloser) Read(buf []byte) (int, error) {
+	return r.reader.Read(buf)
+}
+
+func (r *readCloser) Close() error {
 	r.closed = true
 	return nil
 }
@@ -1288,10 +1350,10 @@ func (r rawContentType) ContentType() string {
 	return r.contentType
 }
 
-type rawFileName struct {
+type rawContentFileName struct {
 	fileName string
 }
 
-func (r rawFileName) FileName() string {
+func (r rawContentFileName) ContentFileName() string {
 	return r.fileName
 }
