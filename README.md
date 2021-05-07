@@ -330,19 +330,21 @@ In addition to writing the bytes, `respond` will apply the correct
 `Content-Type` and `Content-Disposition` headers based on the name/extension
 of the file you provide.
 
-### Raw Files By Implementing io.Reader
+### Raw Files By Implementing ContentReader
 
 If you'd like to decouple yourself further from the `respond`
 library when serving up raw files, you can continue to respond
 using `Ok()` with your own structs/values as long as it implements
-`io.Reader`. When `respond` comes across a result that also
-implements the reader interface, it will assume that you want
-to return that reader's raw bytes rather than marshaling the
-struct as JSON:
+`ContentReader` - which basically means that it has a `Content()` method
+that returns an `io.Reader` with the raw data.
+
+Instead of marshaling the result value as JSON and responding
+with those bytes, it will respond with the raw bytes your
+reader supplies.
 
 ```go
 func ExportCSV(w http.ResponseWriter, req *http.Request) {
-    // This is an *Export which implements io.Reader
+    // This is an *Export which implements ContentReader
     export := crunchTheNumbers() 
 
     // Respond with the raw CSV reader data and the following:
@@ -354,30 +356,33 @@ func ExportCSV(w http.ResponseWriter, req *http.Request) {
 }
 
 type Export struct {
-    RawData *bytes.Buffer
+    csvData *bytes.Buffer
 }
 
-func (e Export) Read(b []byte) (int, error) {
-    return e.RawData.Read(b)
+func (e Export) Content() io.Reader {
+    return e.csvData
 }
 ```
 
-Most of the time you probably don't want that generic
-content type. In other instances you may want to trigger a download, instead. To
-rectify that, you can implement two optional interfaces to
+Most of the time, however, you probably don't want that generic
+content type. Additionally, there may be instances where you'd
+rather have the client trigger a download rather than consume
+the content inline.
+
+To rectify that, you can implement two optional interfaces to
 customize both behaviors:
 
 ```go
 // Implement this to customize the "Content-Type" header.
-type ContentTypeSpecified interface {
+type ContentTypeReader interface {
     ContentType() string
 }
 
 // Implement this to allow an "attachment" disposition instead.
 // The value you return will be the default file name offered to
 // the client/user when downloading.
-type FileNameSpecified interface {
-    FileName() string
+type ContentFileNameReader interface {
+    ContentFileName() string
 }
 ```
 
@@ -386,8 +391,7 @@ with the following:
 
 ```go
 func ExportCSV(w http.ResponseWriter, req *http.Request) {
-    // This is an *Export which implements io.Reader,
-    // ContentTypeSpecifier, and FileNameSpecifier.
+    // This is an *Export which implements all 3 Content-based interfaces
     export := crunchTheNumbers()
 
     // Respond with the raw CSV reader data and the following:
@@ -404,15 +408,15 @@ type Export struct {
     RawData *bytes.Buffer
 }
 
-func (e Export) Read(b []byte) (int, error) {
-    return e.RawData.Read(b)
+func (e Export) Content() io.Reader {
+    return e.csvData
 }
 
 func (e Export) ContentType() string {
     return "text/csv" 
 }
 
-func (e Export) FileName() string {
+func (e Export) ContentFileName() string {
     return "super-important-report.csv"
 }
 ```
