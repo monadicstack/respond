@@ -455,7 +455,7 @@ func (suite RespondSuite) TestRaw_empty() {
 	req := newRequest()
 
 	result := R{}
-	result.reader = bytes.NewBufferString("")
+	result.reader = newRawString("")
 
 	respond.To(w, req).Ok(result)
 	suite.assertStatus(w, 200)
@@ -474,7 +474,7 @@ func (suite RespondSuite) TestRaw_status() {
 	req := newRequest()
 
 	result := R{}
-	result.reader = bytes.NewBufferString("")
+	result.reader = newRawString("")
 
 	respond.To(w, req).Created(result)
 	suite.assertStatus(w, 201)
@@ -493,7 +493,7 @@ func (suite RespondSuite) TestRaw_text() {
 	req := newRequest()
 
 	result := R{}
-	result.reader = bytes.NewBufferString("hello world")
+	result.reader = newRawString("hello world")
 
 	respond.To(w, req).Ok(result)
 	suite.assertStatus(w, 200)
@@ -512,7 +512,7 @@ func (suite RespondSuite) TestRaw_binary() {
 	req := newRequest()
 
 	result := R{}
-	result.reader = bytes.NewBuffer([]byte{0x42, 0x43, 0x44})
+	result.reader = newRawBytes([]byte{0x42, 0x43, 0x44})
 
 	respond.To(w, req).Ok(result)
 	suite.assertStatus(w, 200)
@@ -532,7 +532,7 @@ func (suite RespondSuite) TestRaw_contentType() {
 	req := newRequest()
 
 	result := R{}
-	result.reader = bytes.NewBufferString("Do you see what happens, Larry?")
+	result.reader = newRawString("Do you see what happens, Larry?")
 	result.contentType = "text/plain"
 
 	respond.To(w, req).Ok(result)
@@ -553,7 +553,7 @@ func (suite RespondSuite) TestRaw_contentTypeEmpty() {
 	req := newRequest()
 
 	result := R{}
-	result.reader = bytes.NewBufferString("Do you see what happens, Larry?")
+	result.reader = newRawString("Do you see what happens, Larry?")
 
 	respond.To(w, req).Ok(result)
 	suite.assertStatus(w, 200)
@@ -573,7 +573,7 @@ func (suite RespondSuite) TestRaw_contentDisposition() {
 	req := newRequest()
 
 	result := R{}
-	result.reader = bytes.NewBufferString("Do you see what happens, Larry?")
+	result.reader = newRawString("Do you see what happens, Larry?")
 	result.fileName = "stranger.log"
 
 	respond.To(w, req).Ok(result)
@@ -594,13 +594,31 @@ func (suite RespondSuite) TestRaw_contentDispositionEmpty() {
 	req := newRequest()
 
 	result := R{}
-	result.reader = bytes.NewBufferString("Do you see what happens, Larry?")
+	result.reader = newRawString("Do you see what happens, Larry?")
 
 	respond.To(w, req).Ok(result)
 	suite.assertStatus(w, 200)
 	suite.assertRaw(w, "Do you see what happens, Larry?")
 	suite.assertHeader(w, "Content-Type", "application/octet-stream")
 	suite.assertHeader(w, "Content-Disposition", "inline")
+}
+
+// Should allow you to specify the Content-Disposition file name even if it has quotes in it.
+func (suite RespondSuite) TestRaw_contentDispositionQuoted() {
+	type R struct {
+		rawContentReader
+		rawContentFileName
+	}
+
+	w := newResponseWriter()
+	req := newRequest()
+
+	result := R{}
+	result.reader = newRawString("")
+	result.fileName = `the-"stranger".log`
+
+	respond.To(w, req).Ok(result)
+	suite.assertHeader(w, "Content-Disposition", `attachment; filename="the-\"stranger\".log"`)
 }
 
 // Should allow you to specify the Content-Type AND Content-Disposition by implementing
@@ -616,7 +634,7 @@ func (suite RespondSuite) TestRaw_contentTypeAndDisposition() {
 	req := newRequest()
 
 	result := R{}
-	result.reader = bytes.NewBufferString("Do you see what happens, Larry?")
+	result.reader = newRawString("Do you see what happens, Larry?")
 	result.contentType = "text/plain"
 	result.fileName = "stranger.log"
 
@@ -636,7 +654,7 @@ func (suite RespondSuite) TestRaw_close() {
 	w := newResponseWriter()
 	req := newRequest()
 
-	closer := readCloser{reader: bytes.NewBufferString("Do you see what happens, Larry?")}
+	closer := rawContent{reader: bytes.NewBufferString("Do you see what happens, Larry?")}
 	result := R{}
 	result.reader = &closer
 
@@ -1321,25 +1339,11 @@ func (r fakeRedirector) Redirect() string {
 }
 
 type rawContentReader struct {
-	reader io.Reader
+	reader io.ReadCloser
 }
 
-func (r rawContentReader) Content() io.Reader {
+func (r rawContentReader) Content() io.ReadCloser {
 	return r.reader
-}
-
-type readCloser struct {
-	reader io.Reader
-	closed bool
-}
-
-func (r *readCloser) Read(buf []byte) (int, error) {
-	return r.reader.Read(buf)
-}
-
-func (r *readCloser) Close() error {
-	r.closed = true
-	return nil
 }
 
 type rawContentType struct {
@@ -1356,4 +1360,32 @@ type rawContentFileName struct {
 
 func (r rawContentFileName) ContentFileName() string {
 	return r.fileName
+}
+
+type rawContent struct {
+	reader io.Reader
+	closed bool
+}
+
+func (r *rawContent) Read(buf []byte) (int, error) {
+	return r.reader.Read(buf)
+}
+
+func (r *rawContent) Close() error {
+	r.closed = true
+	return nil
+}
+
+func newRawBytes(content []byte) *rawContent {
+	return &rawContent{
+		reader: bytes.NewBuffer(content),
+		closed: false,
+	}
+}
+
+func newRawString(content string) *rawContent {
+	return &rawContent{
+		reader: bytes.NewBufferString(content),
+		closed: false,
+	}
 }

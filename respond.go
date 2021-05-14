@@ -30,7 +30,7 @@ type Redirector interface {
 // we will send back to the caller.
 type ContentReader interface {
 	// Content supplies the raw data that should be sent to the caller when responding.
-	Content() io.Reader
+	Content() io.ReadCloser
 }
 
 // ContentTypeReader provides details about a file-based response to indicate what we should
@@ -388,20 +388,17 @@ func writeJSON(res http.ResponseWriter, status int, value interface{}) {
 // writeRaw accepts a reader containing the bytes of some file or raw set of data that the
 // user wants to write to the caller.
 func writeRaw(res http.ResponseWriter, status int, value ContentReader) {
-	content := value.Content()
-	if content == nil {
+	reader := value.Content()
+	if reader == nil {
 		res.WriteHeader(status)
 		return
 	}
 
-	if contentCloser, ok := content.(io.Closer); ok {
-		defer func() { _ = contentCloser.Close() }()
-	}
-
+	defer func() { _ = reader.Close() }()
 	res.Header().Set("Content-Type", rawContentType(value))
 	res.Header().Set("Content-Disposition", rawContentDisposition(value))
 	res.WriteHeader(status)
-	_, _ = io.Copy(res, content)
+	_, _ = io.Copy(res, reader)
 }
 
 // rawContentType assumes "application/octet-stream" unless the return value implements
@@ -436,6 +433,7 @@ func rawContentDisposition(value ContentReader) string {
 		return "inline"
 	}
 
+	fileName = strings.ReplaceAll(fileName, `"`, `\"`)
 	return `attachment; filename="` + fileName + `"`
 }
 
